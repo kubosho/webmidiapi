@@ -1,83 +1,100 @@
-var midi;
+var m;
 var inputs, outputs;
 var midiout;
 var timerId;
 
-window.onload=function() {
+window.onload = function () {
     // #1 requestMIDIAccessでMIDIデバイスを取得
+    navigator.requestMIDIAccess({
+        sysex: false
+    })
+    .then(successCallback, errorCallback);
 };
     
 // #2 MIDIデバイスの取得が完了した時のCallback
-function scb(access) {
-    midi=access;
+function successCallback(access) {
+    m = access;
 
-    // #3 inputデバイス一覧をGlobal変数inputsへ
+    var inputFragment = document.createDocumentFragment();
+    var outputFragment = document.createDocumentFragment();
 
-    // #4 outputデバイス一覧ををGlobal変数outputsへ
+    // inputデバイス一覧をGlobal変数inputsへ
+    inputs = m.inputs();
 
-    var mi=document.getElementById("midiInSel");
-    // #5 プルダウンメニューにinputデバイスをリストアップ
+    // プルダウンメニューにinputデバイスをリストアップ
+    inputs.forEach(function (key, port) {
+        var opt = document.createElement('option');
+        opt.text = key.name;
+        opt.value = port;
+        inputFragment.appendChild(opt);
+    });
+    var mIn = document.getElementById("midiInSel");
+    mIn.appendChild(inputFragment);
 
-    var mo=document.getElementById("midiOutSel");
-    // #6 プルダウンメニューにoutputデバイスをリストアップ
+    // outputデバイス一覧ををGlobal変数outputsへ
+    outputs = m.outputs();
+
+    // プルダウンメニューにoutputデバイスをリストアップ
+    outputs.forEach(function (key, port) {
+        var opt = document.createElement('option');
+        opt.text = key.name;
+        opt.value = port;
+        outputFragment.appendChild(opt);
+    });
+    var mOut = document.getElementById("midiOutSel");
+    mOut.appendChild(outputFragment);
 
     /* Inputボタンを押した時の動作 */
     document.getElementById("midiInSelB").addEventListener("click", function(){
-        var port=document.getElementById("midiInSel").value;
-        for(var i=0; i<inputs.length; i++) {
-            inputs[i].onmidimessage=function(){
+        var port = document.getElementById("midiInSel").value;
+        for(var i = 0; i < inputs.length; i++) {
+            inputs[i].onmidimessage = function () {
                 return;
             };
         }
-        // #7 選択したデバイスのinputポートにEventを指定
-        /*
-          注) ソフトウェアキーボードの動作させる為、Event内に必ず追加
-           fKey.onmessage(event.data);
-        */
+        // 選択したデバイスのinputポートにEventを指定
+        inputs[port].onmidimessage = function (event) {
+            midiout.send(event.data);
+            fKey.onmessage(event.data);
+        };
     });
 
     /* Outputボタンを押した時の動作 */
     document.getElementById("midiOutSelB").addEventListener("click", function(){
-        var port=document.getElementById("midiOutSel").value;
-        // #7 選択したデバイスをoutputポートに指定
-
-        // voiceChange(0); /* Web MIDI API Wrapper を使っていない場合のみ有効(「//」を削除)にしてください */
+        var port = document.getElementById("midiOutSel").value;
+        // 選択したデバイスをoutputポートに指定
+        midiout = outputs[port];
+        voiceChange(0);
         fKey.setConnected();
     });
 
     /* ProgramChangeのスライダを動かした時の動作 */
     document.getElementById("programChangeRange").addEventListener("change", function(){
-        var voiceNo=document.getElementById("programChangeRange").value;
+        var voiceNo = document.getElementById("programChangeRange").value;
         voiceChange(voiceNo);
     });
 
     /* Panicボタンを押した時の動作 */
     document.getElementById("panicButton").addEventListener("click", function(){
         // #8 AllSoundOff, resetAllController, allNoteOff のメッセージを送信
-        /*
-          AllSoundOff        : 0xb0 0x78 0x00
-          resetAllController : 0xb0 0x79 0x00
-          allNoteOff         : 0xb0 0x7b 0x00
-        */
+        midiout.send([0xb0, 0x78, 0x00]); // AllSoundOff
+        midiout.send([0xb0, 0x79, 0x00]); // ResetAllController
+        midiout.send([0xb0, 0x7b, 0x00]); // AllNoteOff
     });
-    
-    
 }
 
 /* MIDIデバイスリスト取得を失敗したときのCallback */
-function ecb(e){
+function errorCallback(e){
     console.log(e);
 }
 
 function voiceChange(voiceNo) {
-    if(midiout!==null) {
+    if(midiout !== null) {
         // #9 ProgramChangeのメッセージを送信
-        /*
-          ProgramChange: 0xc0 [VoiceNo] 0x00 
-        */
+        midiout.send([0xc0, voiceNo]);
     }
-    var dVoiceNo=parseInt(voiceNo)+1;
-    document.getElementById("voiceName").innerHTML=dVoiceNo + ". "+ voiceList.getGMVoiceName("instruments", voiceNo);
+    var dVoiceNo = parseInt(voiceNo) + 1;
+    document.getElementById("voiceName").innerHTML = dVoiceNo + ". "+ voiceList.getGMVoiceName("instruments", voiceNo);
 }
 
 /**
@@ -85,13 +102,15 @@ function voiceChange(voiceNo) {
  * js file: flatKeyboard.js
  */   
 var fKey = new FlatKeyboard("keyboard");
-timerId = setInterval(function(){
+timerId = setInterval(function () {
     fKey.draw();
 }, 64);
-fKey.noteOn=function(noteNo) {
+
+fKey.noteOn = function (noteNo) {
     midiout.send([0x90, noteNo, 127]);
 };
-fKey.noteOff=function(noteNo) {
+
+fKey.noteOff = function (noteNo) {
     midiout.send([0x80, noteNo, 127]);
 };
 
